@@ -96,4 +96,21 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+
 # markdown-editor-backend
+
+```
+npm i -g @nestjs/cli
+nest new backend;cd backend
+npm install @nestjs/config @nestjs/swagger
+
+
+npm install prisma --save-dev 
+npx prisma init      
+npm install dotenv --save   
+npm install @nestjs/config
+npm i --save @nestjs/swagger
+npm install @nestjs/passport @nestjs/jwt passport passport-jwt passport-local
+npm install passport-ldapauth ldapjs
+```
+
