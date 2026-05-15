@@ -104,13 +104,40 @@ npm i -g @nestjs/cli
 nest new backend;cd backend
 npm install @nestjs/config @nestjs/swagger
 
+npm install prisma --save-dev
+npm install @prisma/client 
 
-npm install prisma --save-dev 
-npx prisma init      
-npm install dotenv --save   
-npm install @nestjs/config
-npm i --save @nestjs/swagger
-npm install @nestjs/passport @nestjs/jwt passport passport-jwt passport-local
-npm install passport-ldapauth ldapjs
+# For more information, see Database drivers https://www.prisma.io/docs/orm/core-concepts/supported-databases/database-drivers
+npm install @prisma/adapter-better-sqlite3 // local sqlite3
+
+Local SQLite
+Standard SQLite database files (.db). Connection URL format: file:./path/to/database.db
+
+Use prisma migrate dev for schema changes
+Store database file anywhere in your filesystem
+Best for development and small applications
+ 
+npx prisma init  
+Initialized Prisma in your project
+
+  prisma/
+    schema.prisma
+  prisma.config.ts
+
+warn You already have a .gitignore file. Don't forget to add .env in it to not commit any private information.
+
+Next, choose how you want to set up your database:
+
+CONNECT EXISTING DATABASE:
+  1. Configure your DATABASE_URL in prisma.config.ts
+  2. Run prisma db pull to introspect your database.
+
+CREATE NEW DATABASE:
+  Local: npx prisma dev (runs Postgres locally in your terminal)
+
+
+
+#npm install @nestjs/passport @nestjs/jwt passport passport-jwt passport-local
+#npm install passport-ldapauth 
 ```
 
