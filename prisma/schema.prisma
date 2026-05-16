@@ -129,9 +129,9 @@ model File {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([uploadedBy])
-  @@index([deletedAt])
-  @@index([createdAt])
+  @@index([uploadedBy]) // for "my files" pagination
+  @@index([deletedAt]) // filter soft-deletes
+  @@index([createdAt]) // for "newest first" sorting
   @@map("files")
 }
 
@@ -207,6 +207,117 @@ model ChunkPreview {
   @@map("chunk_previews")
 }
 
+// Track which chunks have been embedded in ChromaDB
+model ChunkEmbedding {
+  id      String @id @default(cuid())
+  chunkId String @unique
+  chunk   Chunk  @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+
+  // ChromaDB reference
+  chromaId         String @unique // Document ID in ChromaDB collection
+  chromaCollection String // which collection: "default", "file_123", etc.
+
+  // Embedding model metadata
+  embeddingModel String // "openai/text-embedding-3-small", "sentence-transformers/...", etc.
+  embeddingDim   Int // vector dimensions (1536 for OpenAI, 384 for sentence-transformers, etc.)
+
+  status     String    @default("pending") // "pending", "embedded", "failed"
+  embeddedAt DateTime?
+  error      String?
+
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  fileContent   FileContent? @relation(fields: [fileContentId], references: [id])
+  fileContentId String?
+
+  @@index([chunkId])
+  @@index([chromaCollection])
+  @@index([status])
+  @@map("chunk_embeddings")
+}
+
+// Optional: Track RAG retrievals for monitoring/analytics
+model RagRetrieval {
+  id            String      @id @default(cuid())
+  fileContentId String
+  fileContent   FileContent @relation(fields: [fileContentId], references: [id], onDelete: Cascade)
+
+  // Query that triggered retrieval
+  query String // user question or search query
+
+  // Retrieved chunks (JSON: array of chunkId + similarity scores)
+  retrievedChunks String // JSON: [{chunkId, similarity: 0.87}, ...]
+
+  // LLM response
+  llmResponse String? // summarized answer or relevant context
+
+  createdAt DateTime @default(now())
+
+  @@index([fileContentId])
+  @@index([createdAt])
+  @@map("rag_retrievals")
+}
+
+// LangChain chain execution history (optional but useful for debugging)
+model ChainExecution {
+  id            String      @id @default(cuid())
+  fileContentId String
+  fileContent   FileContent @relation(fields: [fileContentId], references: [id], onDelete: Cascade)
+
+  // Which chain was executed
+  chainType String // "classification", "metadata_extraction", "chunking_strategy", etc.
+
+  // Input & output
+  input  String // JSON: input to the chain
+  output String // JSON: output from chain
+
+  // LLM details
+  model         String // "gpt-4", "claude-3-sonnet", etc.
+  tokensUsed    Int?
+  executionTime Int? // milliseconds
+
+  status String // "success", "failed"
+  error  String?
+
+  createdAt DateTime @default(now())
+
+  @@index([fileContentId])
+  @@index([chainType])
+  @@map("chain_executions")
+}
+
+// Parsing/conversion: separate concern
+model FileContent {
+  id     String @id @default(cuid())
+  fileId String @unique // one active parse per file
+  file   File   @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  parseStatus  String    @default("pending") // "pending", "parsed", "failed"
+  parsedAt     DateTime?
+  parseError   String? // error message if failed
+  parseVersion Int       @default(1) // track if file is reparsed
+
+  markdownPath String? // where markdown lives (S3/filesystem)
+  metadata     String? // JSON: {title, summary, wordCount, chunks, etc.}
+
+  // Workflow
+  analysis DocumentAnalysis?
+  proposal ChunkingProposal?
+  chunks   Chunk[]
+
+  // NEW: LangChain & ChromaDB integrations
+  embeddings      ChunkEmbedding[]
+  retrievals      RagRetrieval[]
+  chainExecutions ChainExecution[]
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([createdAt])
+  @@map("file_contents")
+}
+
 // Final chunks after user approval
 model Chunk {
   id            String      @id @default(cuid())
@@ -221,40 +332,14 @@ model Chunk {
   // Metadata for RAG
   heading String? // section heading if extracted
 
-  // For vector embeddings later
+  // NEW: ChromaDB embedding reference
+  // For vector embeddings 
   embeddingId String? // reference to embedding store (Pinecone, Weaviate, etc.)
 
-  createdAt DateTime @default(now())
+  createdAt      DateTime        @default(now())
+  chunkEmbedding ChunkEmbedding?
 
   @@unique([fileContentId, chunkIndex])
-  @@index([fileContentId])
-  @@index([embeddingId])
+  @@index([fileContentId]) // pagination within a file's chunks
   @@map("chunks")
-}
-
-// Parsing/conversion: separate concern
-model FileContent {
-  id     String @id @default(cuid())
-  fileId String @unique
-  file   File   @relation(fields: [fileId], references: [id], onDelete: Cascade)
-
-  parseStatus  String    @default("pending")
-  parsedAt     DateTime?
-  parseError   String?
-  parseVersion Int       @default(1)
-
-  markdownPath String?
-  metadata     String?
-
-  // NEW: Relations to workflow
-  analysis DocumentAnalysis?
-  proposal ChunkingProposal?
-  chunks   Chunk[]
-
-  deletedAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  @@index([createdAt])
-  @@map("file_contents")
 }

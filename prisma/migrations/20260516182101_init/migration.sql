@@ -101,17 +101,48 @@ CREATE TABLE "chunk_previews" (
 );
 
 -- CreateTable
-CREATE TABLE "chunks" (
+CREATE TABLE "chunk_embeddings" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "chunkId" TEXT NOT NULL,
+    "chromaId" TEXT NOT NULL,
+    "chromaCollection" TEXT NOT NULL,
+    "embeddingModel" TEXT NOT NULL,
+    "embeddingDim" INTEGER NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "embeddedAt" DATETIME,
+    "error" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    "fileContentId" TEXT,
+    CONSTRAINT "chunk_embeddings_chunkId_fkey" FOREIGN KEY ("chunkId") REFERENCES "chunks" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "chunk_embeddings_fileContentId_fkey" FOREIGN KEY ("fileContentId") REFERENCES "file_contents" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "rag_retrievals" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "fileContentId" TEXT NOT NULL,
-    "chunkIndex" INTEGER NOT NULL,
-    "content" TEXT NOT NULL,
-    "startChar" INTEGER NOT NULL,
-    "endChar" INTEGER NOT NULL,
-    "heading" TEXT,
-    "embeddingId" TEXT,
+    "query" TEXT NOT NULL,
+    "retrievedChunks" TEXT NOT NULL,
+    "llmResponse" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "chunks_fileContentId_fkey" FOREIGN KEY ("fileContentId") REFERENCES "file_contents" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+    CONSTRAINT "rag_retrievals_fileContentId_fkey" FOREIGN KEY ("fileContentId") REFERENCES "file_contents" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "chain_executions" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "fileContentId" TEXT NOT NULL,
+    "chainType" TEXT NOT NULL,
+    "input" TEXT NOT NULL,
+    "output" TEXT NOT NULL,
+    "model" TEXT NOT NULL,
+    "tokensUsed" INTEGER,
+    "executionTime" INTEGER,
+    "status" TEXT NOT NULL,
+    "error" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "chain_executions_fileContentId_fkey" FOREIGN KEY ("fileContentId") REFERENCES "file_contents" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateTable
@@ -128,6 +159,20 @@ CREATE TABLE "file_contents" (
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "file_contents_fileId_fkey" FOREIGN KEY ("fileId") REFERENCES "files" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "chunks" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "fileContentId" TEXT NOT NULL,
+    "chunkIndex" INTEGER NOT NULL,
+    "content" TEXT NOT NULL,
+    "startChar" INTEGER NOT NULL,
+    "endChar" INTEGER NOT NULL,
+    "heading" TEXT,
+    "embeddingId" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "chunks_fileContentId_fkey" FOREIGN KEY ("fileContentId") REFERENCES "file_contents" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateIndex
@@ -200,16 +245,40 @@ CREATE INDEX "chunking_proposals_status_idx" ON "chunking_proposals"("status");
 CREATE INDEX "chunk_previews_proposalId_idx" ON "chunk_previews"("proposalId");
 
 -- CreateIndex
-CREATE INDEX "chunks_fileContentId_idx" ON "chunks"("fileContentId");
+CREATE UNIQUE INDEX "chunk_embeddings_chunkId_key" ON "chunk_embeddings"("chunkId");
 
 -- CreateIndex
-CREATE INDEX "chunks_embeddingId_idx" ON "chunks"("embeddingId");
+CREATE UNIQUE INDEX "chunk_embeddings_chromaId_key" ON "chunk_embeddings"("chromaId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "chunks_fileContentId_chunkIndex_key" ON "chunks"("fileContentId", "chunkIndex");
+CREATE INDEX "chunk_embeddings_chunkId_idx" ON "chunk_embeddings"("chunkId");
+
+-- CreateIndex
+CREATE INDEX "chunk_embeddings_chromaCollection_idx" ON "chunk_embeddings"("chromaCollection");
+
+-- CreateIndex
+CREATE INDEX "chunk_embeddings_status_idx" ON "chunk_embeddings"("status");
+
+-- CreateIndex
+CREATE INDEX "rag_retrievals_fileContentId_idx" ON "rag_retrievals"("fileContentId");
+
+-- CreateIndex
+CREATE INDEX "rag_retrievals_createdAt_idx" ON "rag_retrievals"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "chain_executions_fileContentId_idx" ON "chain_executions"("fileContentId");
+
+-- CreateIndex
+CREATE INDEX "chain_executions_chainType_idx" ON "chain_executions"("chainType");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "file_contents_fileId_key" ON "file_contents"("fileId");
 
 -- CreateIndex
 CREATE INDEX "file_contents_createdAt_idx" ON "file_contents"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "chunks_fileContentId_idx" ON "chunks"("fileContentId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "chunks_fileContentId_chunkIndex_key" ON "chunks"("fileContentId", "chunkIndex");
