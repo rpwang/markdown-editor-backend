@@ -11,3 +11,74 @@ generator client {
 datasource db {
   provider = "sqlite"
 }
+
+// Role hierarchy: USER < SUPERUSER < ADMINISTRATOR
+enum Role {
+  ADMINISTRATOR
+  SUPERUSER
+  USER
+}
+
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  username      String?   @unique 
+
+  // Auth source fields — only one will be populated per user
+  passwordHash  String?   // Local auth: bcrypt hash
+  ldapUsername  String?   @unique   // LDAP: sAMAccountName or uid
+
+  role          Role      @default(USER)
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+
+  // Password reset tokens (local accounts only)
+  passwordResetTokens PasswordResetToken[]
+
+  // Fine-grained RBAC permissions on top of the role hierarchy
+  permissions   UserPermission[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  // Map your Prisma model name to a different table name in your underlying database.
+  @@map("users")
+}
+
+// Used by POST /auth/forgot-password and POST /auth/reset-password
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  token     String    @unique  // hashed with SHA-256 before storage
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@map("password_reset_tokens")
+}
+
+// The permission catalogue — seeded once, never changes at runtime
+model Permission {
+  id          String           @id @default(cuid())
+  key         String           @unique  // e.g. "team:read", "billing:write"
+  description String
+  users       UserPermission[]
+
+  @@map("permissions")
+}
+
+
+// Which users have which permissions (many-to-many with audit fields)
+model UserPermission {
+  userId       String
+  permissionId String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  grantedAt    DateTime   @default(now())
+  grantedById  String?    // cuid of the admin who granted this; null = system-granted
+
+  @@id([userId, permissionId])
+  @@map("user_permissions")
+}
