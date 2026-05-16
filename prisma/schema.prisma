@@ -19,34 +19,35 @@ enum Role {
   USER
 }
 
-
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  name          String
-  username      String?   @unique 
+  id       String  @id @default(cuid())
+  email    String  @unique
+  name     String
+  username String? @unique
 
   // Auth source: exactly ONE must be populated (enforced in app logic)
   // For local auth: use passwordHash
   // For LDAP: use ldapUsername (and set passwordHash to null)
-  passwordHash  String?   // Local auth: bcrypt hash
-  ldapUsername  String?   @unique   // LDAP: sAMAccountName or uid
+  passwordHash String? // Local auth: bcrypt hash
+  ldapUsername String? @unique // LDAP: sAMAccountName or uid
 
-  role          Role      @default(USER)
-  isActive      Boolean   @default(true)
-  lastLoginAt   DateTime?
+  role        Role      @default(USER)
+  isActive    Boolean   @default(true)
+  lastLoginAt DateTime?
 
   // Password reset tokens (local accounts only)
   passwordResetTokens PasswordResetToken[]
 
   // Fine-grained RBAC permissions on top of the role hierarchy
-  permissions   UserPermission[]
+  permissions UserPermission[]
 
-   // User's files (owned by the user) 
-  files               File[]
+  // User's files (owned by the user) 
+  files File[]
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  userPermissions UserPermission[] @relation("GrantedByUser")
+
   // Map your Prisma model name to a different table name in your underlying database.
   @@index([isActive]) // filter active users
   @@index([role]) // filter by role
@@ -56,32 +57,32 @@ model User {
 
 // Used by POST /auth/forgot-password and POST /auth/reset-password
 model PasswordResetToken {
-  id        String    @id @default(cuid())
-  token     String    @unique  // hashed with SHA-256 before storage
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  token  String @unique // hashed with SHA-256 before storage
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   expiresAt DateTime
   usedAt    DateTime? // When token was consumed (null = not used yet)
   createdAt DateTime  @default(now())
 
- @@index([expiresAt]) // cleanup expired tokens
+  @@index([expiresAt]) // cleanup expired tokens
   @@index([userId, expiresAt]) // find user's valid tokens
   @@map("password_reset_tokens")
 }
 
 // The permission catalogue — seeded once, never changes at runtime
 model Permission {
-  id          String           @id @default(cuid())
-  key         String           @unique  // e.g. "team:read", "billing:write"
+  id          String @id @default(cuid())
+  key         String @unique // e.g. "team:read", "billing:write"
   description String
-  category    String           // e.g. "files", "users", "billing" (for grouping UI)
+  category    String // e.g. "files", "users", "billing" (for grouping UI)
 
-  users       UserPermission[]
+  users UserPermission[]
+
   @@index([category])
   @@map("permissions")
 }
-
 
 // Which users have which permissions (many-to-many with audit fields)
 model UserPermission {
@@ -92,72 +93,168 @@ model UserPermission {
 
   // Who granted this permission (null = system-granted), cuid of the admin who granted this; null = system-granted
 
-  grantedBy    String?
-  grantedByUser User?     @relation("GrantedByUser", fields: [grantedBy], references: [id], onDelete: SetNull)
-  grantedAt    DateTime   @default(now())
- 
+  grantedBy     String?
+  grantedByUser User?    @relation("GrantedByUser", fields: [grantedBy], references: [id], onDelete: SetNull)
+  grantedAt     DateTime @default(now())
+
   @@id([userId, permissionId])
   @@index([permissionId]) // find users with a specific permission
-  @@index([grantedById]) // audit: who granted permissions
+  @@index([grantedBy]) // audit: who granted permissions
   @@map("user_permissions")
 }
 
 // Uploaded files with audit trail
 model File {
-  id            String    @id @default(cuid())
-  
+  id String @id @default(cuid())
+
   // Original uploaded file metadata
-  filename      String
-  mimeType      String    // "application/pdf", "application/vnd.ms-word", etc.
-  size          BigInt    // bytes
-  
+  filename String
+  mimeType String // "application/pdf", "application/vnd.ms-word", etc.
+  size     BigInt // bytes
+
   // Storage
-  storagePath   String    // where original file is stored
-  storageType   String    @default("local") // "local", "s3", "gcs"
-  
+  storagePath String // where original file is stored
+  storageType String @default("local") // "local", "s3", "gcs"
+
   // Ownership
-  uploadedBy    String
-  user          User      @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
-  
+  uploadedBy String
+  user       User   @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
+
   // Relations
-  content       FileContent?  // latest parsed content (optional)
-  
+  content FileContent? // latest parsed content (optional)
+
   // Soft delete
-  deletedAt     DateTime?
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([uploadedBy])
   @@index([deletedAt])
   @@index([createdAt])
   @@map("files")
 }
 
+// Document classification & metadata extraction
+model DocumentAnalysis {
+  id            String      @id @default(cuid())
+  fileContentId String      @unique
+  fileContent   FileContent @relation(fields: [fileContentId], references: [id], onDelete: Cascade)
+
+  // LLM classification
+  documentType           String // "protocol", "scientific_paper", "white_paper", etc.
+  documentTypeConfidence Float // 0-1 confidence score
+
+  // Extracted metadata suggested by LLM
+  extractedMetadata String // JSON: {title, authors, summary, keywords, abstract, etc.}
+
+  // Status in workflow
+  status String @default("pending") // "pending", "extracted", "user_reviewed", "approved"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([fileContentId])
+  @@index([status])
+  @@map("document_analyses")
+}
+
+// Chunking strategy proposals & user feedback
+model ChunkingProposal {
+  id            String      @id @default(cuid())
+  fileContentId String      @unique
+  fileContent   FileContent @relation(fields: [fileContentId], references: [id], onDelete: Cascade)
+
+  // LLM suggestions (multiple methods proposed)
+  suggestedMethods String // JSON array: [{method: "semantic", params: {...}}, {method: "sliding_window", params: {...}}]
+
+  // User selects & refines
+  selectedMethod String? // which method user chose
+  userFeedback   String? // JSON: what user changed/refined
+
+  // Final approved strategy
+  finalStrategy String? // JSON: {method, chunkSize, overlap, etc.}
+
+  // Status in workflow
+  status String @default("pending") // "pending", "suggested", "user_reviewed", "finalized"
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  chunkPreviews ChunkPreview[]
+
+  @@index([fileContentId])
+  @@index([status])
+  @@map("chunking_proposals")
+}
+
+// Preview: chunks before finalization
+model ChunkPreview {
+  id         String           @id @default(cuid())
+  proposalId String
+  proposal   ChunkingProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  chunkIndex Int // chunk 0, 1, 2, etc.
+  content    String // preview of chunk (first 500 chars or full)
+  startChar  Int // where in markdown
+  endChar    Int
+
+  // User feedback on this chunk
+  userFeedback String? // e.g. "split this, too long"
+
+  createdAt DateTime @default(now())
+
+  @@index([proposalId])
+  @@map("chunk_previews")
+}
+
+// Final chunks after user approval
+model Chunk {
+  id            String      @id @default(cuid())
+  fileContentId String
+  fileContent   FileContent @relation(fields: [fileContentId], references: [id], onDelete: Cascade)
+
+  chunkIndex Int
+  content    String // actual chunk text
+  startChar  Int
+  endChar    Int
+
+  // Metadata for RAG
+  heading String? // section heading if extracted
+
+  // For vector embeddings later
+  embeddingId String? // reference to embedding store (Pinecone, Weaviate, etc.)
+
+  createdAt DateTime @default(now())
+
+  @@unique([fileContentId, chunkIndex])
+  @@index([fileContentId])
+  @@index([embeddingId])
+  @@map("chunks")
+}
+
 // Parsing/conversion: separate concern
 model FileContent {
-  id            String    @id @default(cuid())
-  fileId        String    @unique  // one active parse per file
-  file          File      @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  
-  // Parse status & tracking
-  parseStatus   String    @default("pending") // "pending", "parsed", "failed"
-  parsedAt      DateTime?
-  parseError    String?   // error message if failed
-  parseVersion  Int       @default(1) // track if file is reparsed
-  
-  // Parsed output
-  markdownPath  String?   // where markdown lives (S3/filesystem)
-  metadata      String?   // JSON: {title, summary, wordCount, chunks, etc.}
-  
-  // Soft delete
-  deletedAt     DateTime?
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  @@index([fileId])
-  @@index([parseStatus])
+  id     String @id @default(cuid())
+  fileId String @unique
+  file   File   @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  parseStatus  String    @default("pending")
+  parsedAt     DateTime?
+  parseError   String?
+  parseVersion Int       @default(1)
+
+  markdownPath String?
+  metadata     String?
+
+  // NEW: Relations to workflow
+  analysis DocumentAnalysis?
+  proposal ChunkingProposal?
+  chunks   Chunk[]
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
   @@index([createdAt])
   @@map("file_contents")
 }

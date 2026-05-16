@@ -47,6 +47,10 @@ lerna-debug.log*
 .env.production.local
 .env.local
 
+# LM 
+SKILL.md
+
+
 # temp directory
 .temp
 .tmp
